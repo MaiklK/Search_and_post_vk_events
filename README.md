@@ -1,2 +1,2 @@
-# Serch_and_post_vk_events
+# Serch and post vk events
 Поиск и публикация событий (мероприятий ) ВКонтакте при помощи vk api
