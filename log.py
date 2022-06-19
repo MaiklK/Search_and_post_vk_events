@@ -10,5 +10,8 @@ logger.addHandler(fl)
 
 
 def log(message):
-    """Пишет ошибку в лог с датой"""
+    """Пишет ошибку в лог с датой
+
+    :param message: сообщение записываемое в лог
+    """
     logger.error(message)
