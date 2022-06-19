@@ -110,6 +110,7 @@ def sort_events_by_keys(events: list, list_keys: list):
     """Отсортировывает события по списку ключей
 
     :param events: список мероприятий
+
     :param list_keys: список ключей
     """
     sorted_events = []
@@ -130,6 +131,7 @@ def minus_events(from_events: list, other_events: list):
     """Вычитает из основного списка мероприятий другой список мероприятий
 
     :param from_events: список основных мероприятий
+
     :param other_events: список вычитаемых мероприятий
     """
     help_list = []
@@ -160,6 +162,7 @@ def create_dict_from_events_by_startdate(events: list):
 def sort_events_by_date(events: list):
     """Сортирует список мероприятий по стартовой дате
     в порядке возрастания
+
     :param events: список мероприятий
     """
     check_dict = create_dict_from_events_by_startdate(events)
