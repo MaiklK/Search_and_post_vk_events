@@ -347,9 +347,9 @@ def main(login: str, password: str, app_id: str, client_secret: str, country_id:
                             text_not_interesting_events, group_id, city_name, dt, photos)
     if 'post_id' in req:
         da_ta = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-        print(f"{da_ta}: события успешно опубликованы")
+        print(f"{da_ta}: События успешно опубликованы")
     else:
-        error('Что-то пошло не так')
+        error('События не опубликовались')
 
 
 login = password = app_id = client_secret = country_id = city_id = group_id = city_name = hours_delta = \
