@@ -45,6 +45,13 @@ def list_from_file(file_path):
     return filelist
 
 
+def auth_handler():
+    """Обработчик двухфакторной аутентификации (если включена)
+    """
+    key = input('Enter authentication code: ')
+    return key, True
+
+
 def authorization_vk(login: str, password: str, app_id, client_secret: str, api_version='5.131'):
     """Авторизация Вконтакте. При успешной авторизации создается файл с токеном и куками,
     из которых в последствии берутся данные
@@ -56,7 +63,7 @@ def authorization_vk(login: str, password: str, app_id, client_secret: str, api_
     :param api_version: Версия API
     """
     vk_session = vk_api.VkApi(login=login, password=password, app_id=app_id, client_secret=client_secret,
-                              api_version=api_version)
+                              api_version=api_version, auth_handler=auth_handler)
     try:
         vk_session.auth(token_only=True)
         return vk_session
@@ -343,7 +350,6 @@ def main(login: str, password: str, app_id: str, client_secret: str, id_country:
         print(f"{da_ta}: события успешно опубликованы")
     else:
         error('Что-то пошло не так')
-
 
 
 login = password = app_id = client_secret = id_country = id_city = id_group = city_name = hours_delta = \
