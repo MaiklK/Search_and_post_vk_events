@@ -29,7 +29,7 @@ def check_file(file_path):
 def get_start_dt(days_delta: int, hours_delta: int):
     """Возвращает дату со смещением на дни и часы
 
-    :param days_delta: разница часов
+    :param days_delta: разница дней
     :param hours_delta: разница часов
     """
     return datetime.datetime.now() + datetime.timedelta(days=days_delta, hours=hours_delta)
@@ -65,10 +65,11 @@ def authorization_vk(login: str, password: str, app_id, client_secret: str, api_
         error('Ошибка авторизации подробности в логе')
 
 
-def search_all_event_by_city(search_querys: list, city_id: int, country_id: int):
+def search_all_event_by_city(vk_session, search_querys: list, city_id: int, country_id: int):
     """Находит id всех предстоящих мероприятий Вконтекте согласно поисковым
     запросам из списка
 
+    :param vk_session: объект vk_api
     :param search_querys: лист с поисковыми запросами
     :param city_id: id города
     :param country_id: id страны
@@ -96,10 +97,11 @@ def unix_to_datetime(timestamp):
     return datetime.datetime.fromtimestamp(int(timestamp))
 
 
-def sort_group_by_date(all_id_groups: list, dt, hours_delta):
+def sort_group_by_date(vk_session, all_id_groups: list, dt, hours_delta):
     """Фильтрует мероприятия которые случаться со сдвигом по времени
     остальные отбрасывает + удаляет дубли мероприятий
 
+    :param vk_session: объект vk_api
     :param all_id_groups: список id всех предстоящих мероприятий
     :param dt: datetime.now
     :param hours_delta: размер сдвига по дням
@@ -132,10 +134,11 @@ def sort_group_by_date(all_id_groups: list, dt, hours_delta):
     return sort_events
 
 
-def up_fields_for_events(all_id_groups: list, field: str, events: list):
+def up_fields_for_events(vk_session, all_id_groups: list, field: str, events: list):
     """Добавляет ключи и их значения (информация из api Вконтакте)
     к словарю мероприятий
 
+    :param vk_session: объект vk_api
     :param all_id_groups: id мероприятий
     :param field: название поля
     :param events: словарь мероприятий
@@ -154,17 +157,17 @@ def up_fields_for_events(all_id_groups: list, field: str, events: list):
     return events
 
 
-def up_all_fields(fields: list, events: list):
+def up_all_fields(vk_session, fields: list, events: list):
     """Массовое добавление ключей и значений (информация из api Вконтакте)
     к словарю мероприятий
 
+    :param vk_session: объект vk_api
     :param fields: список полей
-
     :param events: словарь мероприятий
     """
     for field in fields:
         ids = th.ids_from_list_events(events)
-        events = up_fields_for_events(ids, field, events)
+        events = up_fields_for_events(vk_session, ids, field, events)
     return events
 
 
@@ -201,23 +204,173 @@ def generate_block_text_events(events: list, hours_delta: int, dt):
     return text_block_events
 
 
-login = password = app_id = client_secret = id_country = city_name = id_city = hours_delta = id_group = ''
+def generate_trash_block(events: list, hours_delta: int, dt):
+    """Генерирует блок с мусорными мероприятиями для постинга
+
+    :param events: список мероприятий
+    :param hours_delta: разница в часах
+    :param dt: datetime
+    """
+    text_block_events = ''
+    i = 1
+    for event in events:
+        event_name = th.clean_name(event['name'], dt).lower()
+        start_date = normal_date(event["start_date"], hours_delta)
+        text_block_events += f'{i}. {start_date} @club{event["id"]}({event_name})\n'
+        i += 1
+    return text_block_events
+
+
+def get_photo_events(events: list, photo_list: list):
+    """Добавляет photo для постинга из первых 10 фото мероприятий
+
+    :param events: список мероприятий
+    :param photo_list: список фото для постинга
+    """
+    for event in events:
+        if len(photo_list) == 10:
+            return photo_list
+        if event.get('has_photo', 0) == 1:
+            if event['crop_photo'] == 0:
+                continue
+            photo_list.append(
+                f"photo{str(event['crop_photo']['photo']['owner_id'])}_{str(event['crop_photo']['photo']['id'])}")
+    return photo_list
+
+
+def photo_to_post(events1: list, events2: list):
+    """Возвращает 10 первых фото из 2 списков мероприятий
+
+    :param events1: список мероприятий 1
+    :param events2: список мероприятий 2
+    """
+    photos = ''
+    photo_list = []
+    photo_list = get_photo_events(events1, photo_list)
+    photo_list = get_photo_events(events2, photo_list)
+    for photo in photo_list:
+        photos += f'{photo},'
+    return photos
+
+
+def post_events_in_vk(vk_session, post_interest, post_other, post_not_interest, id_group, city_name, dt, photos):
+    """Постинг мероприятий в указанной группе
+
+    :param post_interest: текст интересных событий
+    :param post_other: текст неопознанных(по ключам) событий
+    :param post_not_interest: текст не интересных событий
+    :param id_group: id группы для постинга (аккаунта должен быть админом)
+    :param city_name: имя города
+    :param dt: datetime
+    :param photos: список фотографий
+    """
+    text_to_post = f'ВСЕ СОБЫТИЯ|МЕРОПРИЯТИЯ ВКОНТАКТЕ {city_name.upper()} НА {dt.strftime("%d.%m.%Y")}\n'
+    if len(post_interest) > 0:
+        text_to_post += f'\nПОХОДУ ТУТ БУДЕТ ИНТЕРЕСНО:\n{post_interest}\n'
+    if len(post_other) > 0:
+        text_to_post += f'\nНЕОПОЗНАННЫЕ СОБЫТИЯ:\n{post_other}\n'
+    if len(post_not_interest) > 0:
+        text_to_post += f'\nЭТИ МОЖНО НЕ СМОТРЕТЬ:\n\n{post_not_interest}'
+    text_to_post = {'owner_id': f'-{id_group}', 'message': text_to_post, 'attachments': photos}
+    return vk_api.VkApi.method(vk_session, 'wall.post', text_to_post)
+
+
+def post_nothing(vk_session, id_group, city_name, dt):
+    """Постинг в случае отсутствия событий на нужную дату
+
+    :param id_group: id группы для постинга (аккаунта должен быть админом)
+    :param city_name: имя города
+    :param dt: datetime
+    """
+    text_to_post = f'ВСЕ СОБЫТИЯ|МЕРОПРИЯТИЯ ВКОНТАКТЕ {city_name} НА {dt.strftime("%d.%m.%Y")}\n\n' \
+                   f'А СОБЫТИЙ ТО И НЕТУ'
+    text_to_post = {'owner_id': f'-{id_group}', 'message': text_to_post}
+    return vk_api.VkApi.method(vk_session, 'wall.post', text_to_post)
+
+
+def main(login: str, password: str, app_id: str, client_secret: str, id_country: str, id_city: str,
+         id_group: str, city_name: str, hours_delta: int, days_delta: int,
+         interesting_path: str, not_interesting_path: str):
+    """Тело основной функции, ищет и публикует мероприятия на желаемую дату задается параметром 'days_delta',
+    желаемой страны параметр 'id_country' и города 'id_city', при этом фильтруя на интересные 'interesting_path'
+    и неинтересные 'not_interesting_path'
+
+    :param login: логин от аккаунта VK
+    :param password: пароль от аккаунта VK
+    :param app_id: id приложения
+    :param client_secret:  секретный ключ приложения
+    :param id_country: id страны в которой будем искать события
+    :param id_city: id города для которого будем искать события
+    :param id_group: id группы в которую будем постить
+    :param city_name: имя города для которого будем искать события
+    :param hours_delta: разница в часах от московского времени
+    :param days_delta: разница в днях 0 => сегодня
+    :param interesting_path: путь к белому списку мероприятий
+    :param not_interesting_path: путь к черному списку мероприятий
+    """
+    da_ta = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+    print(f"{da_ta}: Начало работы")
+    dt = get_start_dt(int(days_delta), int(hours_delta))
+    vk_session = authorization_vk(login, password, app_id, client_secret)
+    search_querys = th.get_search_querys(datetime.datetime.now())
+    all_ids_events = search_all_event_by_city(vk_session, search_querys, int(id_city), int(id_country))
+    events = sort_group_by_date(vk_session, all_ids_events, dt, hours_delta)
+    if len(events) == 0:
+        post_nothing(vk_session, id_group, city_name, dt)
+        da_ta = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+        print(f'{da_ta}: Нету событий для {city_name} на {dt.strftime("%d.%m.%Y %H:%M")}')
+    fields = ['description', 'finish_date', 'status', 'has_photo', 'crop_photo', 'site']
+    events = up_all_fields(vk_session, fields, events)
+    events = th.sort_events_by_date(events)
+    interesting_events = []
+    not_interesting_events = []
+    if check_file(interesting_path):
+        interesting = list_from_file(interesting_path)
+        interesting_events = th.sort_events_by_keys(events, interesting)
+        events = th.minus_events(events, interesting_events)
+    if check_file(not_interesting_path):
+        not_interesting = list_from_file(not_interesting_path)
+        not_interesting_events = th.sort_events_by_keys(events, not_interesting)
+        events = th.minus_events(events, not_interesting_events)
+    text_interesting_events = generate_block_text_events(interesting_events, hours_delta, dt)
+    text_others_events = generate_block_text_events(events, hours_delta, dt)
+    text_not_interesting_events = generate_trash_block(not_interesting_events, hours_delta, dt)
+    photos = photo_to_post(interesting_events, events)
+    req = post_events_in_vk(vk_session, text_interesting_events, text_others_events,
+                            text_not_interesting_events, id_group, city_name, dt, photos)
+    if 'post_id' in req:
+        da_ta = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+        print(f"{da_ta}: события успешно опубликованы")
+    else:
+        error('Что-то пошло не так')
+
+
+
+login = password = app_id = client_secret = id_country = id_city = id_group = city_name = hours_delta = \
+    days_delta = interesting_path = not_interesting_path = ''
 # взятие конфига из файла settings.ini
 if check_file('settings.ini'):
     config = configparser.ConfigParser()
     config.read('settings.ini', encoding="utf-8")
     login = config['vk']['login']  # логин от аккаунта VK
-    password = config['vk']['password']  # пароль
+    password = config['vk']['password']  # пароль от аккаунта VK
     app_id = config['vk']['app_id']  # id приложения
     client_secret = config['vk']['client_secret']  # секретный ключ приложения
     id_country = config['vk']['id_country']  # id страны в которой будем искать события
     id_city = config['vk']['id_city']  # id города для которого будем искать события
     id_group = config['vk']['id_group']  # id группы в которую будем постить
     # дальше идут необязательные параметры
-    city_name = config['vk']['city_name']  # имя города для которого будем искать события
-    hours_delta = config['vk']['hours_delta']  # разница в часах от московского времени
-    interesting_path = config['vk']['interesting_path']  # путь к белому списку мероприятий
-    not_interesting_path = config['vk']['not_interesting_path']  # путь к черному списку мероприятий
+    city_name = config['settings']['city_name']  # имя города для которого будем искать события
+    hours_delta = config['settings']['hours_delta']  # разница в часах от московского времени
+    days_delta = config['settings']['days_delta']  # разница в днях 0 сегодня 1 завтра и т.д.
+    interesting_path = config['settings']['interesting_path']  # путь к белому списку мероприятий
+    not_interesting_path = config['settings']['not_interesting_path']  # путь к черному списку мероприятий
 else:
     error("Не найден файл конфигурации 'settings.ini'")
-vk_session = authorization_vk(login, password, app_id, client_secret)
+
+try:
+    main(login, password, app_id, client_secret, id_country, id_city, id_group, city_name, int(hours_delta),
+         int(days_delta), interesting_path, not_interesting_path)
+except Exception:
+    log.log(traceback.format_exc())
+    error('Что-то пошло не так, подробности в логе')
