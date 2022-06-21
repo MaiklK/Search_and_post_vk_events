@@ -92,8 +92,8 @@ def search_all_event_by_city(vk_session, search_querys: list, city_id: int, coun
     # получение ответа Вконтакте
     all_events = [value.result['items'] for value in search_events.values()]
     # выдергивание только id мероприятий
-    all_id_groups = [event['id'] for events in all_events for event in events]
-    return list(set(all_id_groups))
+    all_group_ids = [event['id'] for events in all_events for event in events]
+    return list(set(all_group_ids))
 
 
 def unix_to_datetime(timestamp):
@@ -104,22 +104,22 @@ def unix_to_datetime(timestamp):
     return datetime.datetime.fromtimestamp(int(timestamp))
 
 
-def sort_group_by_date(vk_session, all_id_groups: list, dt, hours_delta):
+def sort_group_by_date(vk_session, all_group_ids: list, dt, hours_delta):
     """Фильтрует мероприятия которые случаться со сдвигом по времени
     остальные отбрасывает + удаляет дубли мероприятий
 
     :param vk_session: объект vk_api
-    :param all_id_groups: список id всех предстоящих мероприятий
+    :param all_group_ids: список id всех предстоящих мероприятий
     :param dt: datetime.now
     :param hours_delta: размер сдвига по дням
     """
     sort_events = []
     name_events = []
-    while len(all_id_groups) != 0:
+    while len(all_group_ids) != 0:
         ids = ''
         for i in range(499):
-            if len(all_id_groups) != 0:
-                ids += f"{all_id_groups.pop(0)},"
+            if len(all_group_ids) != 0:
+                ids += f"{all_group_ids.pop(0)},"
         even_not_sort = vk_api.VkApi.method(vk_session, method='groups.getById',
                                             values={'fields': 'start_date', 'group_ids': ids})
         for event in even_not_sort:
@@ -141,20 +141,20 @@ def sort_group_by_date(vk_session, all_id_groups: list, dt, hours_delta):
     return sort_events
 
 
-def up_fields_for_events(vk_session, all_id_groups: list, field: str, events: list):
+def up_fields_for_events(vk_session, all_group_ids: list, field: str, events: list):
     """Добавляет ключи и их значения (информация из api Вконтакте)
     к словарю мероприятий
 
     :param vk_session: объект vk_api
-    :param all_id_groups: id мероприятий
+    :param all_group_ids: id мероприятий
     :param field: название поля
     :param events: словарь мероприятий
     """
     ids = ''
-    while len(all_id_groups) != 0:
+    while len(all_group_ids) != 0:
         if len(ids) > 499:
             break
-        ids += f"{all_id_groups.pop(0)},"
+        ids += f"{all_group_ids.pop(0)},"
     events_fields = vk_api.VkApi.method(vk_session, method='groups.getById',
                                         values={'fields': field, 'group_ids': ids})
     for i in range(len(events)):
@@ -260,13 +260,13 @@ def photo_to_post(events1: list, events2: list):
     return photos
 
 
-def post_events_in_vk(vk_session, post_interest, post_other, post_not_interest, id_group, city_name, dt, photos):
+def post_events_in_vk(vk_session, post_interest, post_other, post_not_interest, group_id, city_name, dt, photos):
     """Постинг мероприятий в указанной группе
 
     :param post_interest: текст интересных событий
     :param post_other: текст неопознанных(по ключам) событий
     :param post_not_interest: текст не интересных событий
-    :param id_group: id группы для постинга (аккаунта должен быть админом)
+    :param group_id: id группы для постинга (аккаунта должен быть админом)
     :param city_name: имя города
     :param dt: datetime
     :param photos: список фотографий
@@ -278,37 +278,37 @@ def post_events_in_vk(vk_session, post_interest, post_other, post_not_interest, 
         text_to_post += f'\nНЕОПОЗНАННЫЕ СОБЫТИЯ:\n{post_other}\n'
     if len(post_not_interest) > 0:
         text_to_post += f'\nЭТИ МОЖНО НЕ СМОТРЕТЬ:\n\n{post_not_interest}'
-    text_to_post = {'owner_id': f'-{id_group}', 'message': text_to_post, 'attachments': photos}
+    text_to_post = {'owner_id': f'-{group_id}', 'message': text_to_post, 'attachments': photos}
     return vk_api.VkApi.method(vk_session, 'wall.post', text_to_post)
 
 
-def post_nothing(vk_session, id_group, city_name, dt):
+def post_nothing(vk_session, group_id, city_name, dt):
     """Постинг в случае отсутствия событий на нужную дату
 
-    :param id_group: id группы для постинга (аккаунта должен быть админом)
+    :param group_id: id группы для постинга (аккаунта должен быть админом)
     :param city_name: имя города
     :param dt: datetime
     """
     text_to_post = f'ВСЕ СОБЫТИЯ|МЕРОПРИЯТИЯ ВКОНТАКТЕ {city_name} НА {dt.strftime("%d.%m.%Y")}\n\n' \
                    f'А СОБЫТИЙ ТО И НЕТУ'
-    text_to_post = {'owner_id': f'-{id_group}', 'message': text_to_post}
+    text_to_post = {'owner_id': f'-{group_id}', 'message': text_to_post}
     return vk_api.VkApi.method(vk_session, 'wall.post', text_to_post)
 
 
-def main(login: str, password: str, app_id: str, client_secret: str, id_country: str, id_city: str,
-         id_group: str, city_name: str, hours_delta: int, days_delta: int,
+def main(login: str, password: str, app_id: str, client_secret: str, country_id: str, city_id: str,
+         group_id: str, city_name: str, hours_delta: int, days_delta: int,
          interesting_path: str, not_interesting_path: str):
     """Тело основной функции, ищет и публикует мероприятия на желаемую дату задается параметром 'days_delta',
-    желаемой страны параметр 'id_country' и города 'id_city', при этом фильтруя на интересные 'interesting_path'
+    желаемой страны параметр 'country_id' и города 'city_id', при этом фильтруя на интересные 'interesting_path'
     и неинтересные 'not_interesting_path'
 
     :param login: логин от аккаунта VK
     :param password: пароль от аккаунта VK
     :param app_id: id приложения
     :param client_secret:  секретный ключ приложения
-    :param id_country: id страны в которой будем искать события
-    :param id_city: id города для которого будем искать события
-    :param id_group: id группы в которую будем постить
+    :param country_id: id страны в которой будем искать события
+    :param city_id: id города для которого будем искать события
+    :param group_id: id группы в которую будем постить
     :param city_name: имя города для которого будем искать события
     :param hours_delta: разница в часах от московского времени
     :param days_delta: разница в днях 0 => сегодня
@@ -320,10 +320,10 @@ def main(login: str, password: str, app_id: str, client_secret: str, id_country:
     dt = get_start_dt(int(days_delta), int(hours_delta))
     vk_session = authorization_vk(login, password, app_id, client_secret)
     search_querys = th.get_search_querys(datetime.datetime.now())
-    all_ids_events = search_all_event_by_city(vk_session, search_querys, int(id_city), int(id_country))
+    all_ids_events = search_all_event_by_city(vk_session, search_querys, int(city_id), int(country_id))
     events = sort_group_by_date(vk_session, all_ids_events, dt, hours_delta)
     if len(events) == 0:
-        post_nothing(vk_session, id_group, city_name, dt)
+        post_nothing(vk_session, group_id, city_name, dt)
         da_ta = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
         print(f'{da_ta}: Нету событий для {city_name} на {dt.strftime("%d.%m.%Y %H:%M")}')
     fields = ['description', 'finish_date', 'status', 'has_photo', 'crop_photo', 'site']
@@ -344,7 +344,7 @@ def main(login: str, password: str, app_id: str, client_secret: str, id_country:
     text_not_interesting_events = generate_trash_block(not_interesting_events, hours_delta, dt)
     photos = photo_to_post(interesting_events, events)
     req = post_events_in_vk(vk_session, text_interesting_events, text_others_events,
-                            text_not_interesting_events, id_group, city_name, dt, photos)
+                            text_not_interesting_events, group_id, city_name, dt, photos)
     if 'post_id' in req:
         da_ta = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
         print(f"{da_ta}: события успешно опубликованы")
@@ -352,7 +352,7 @@ def main(login: str, password: str, app_id: str, client_secret: str, id_country:
         error('Что-то пошло не так')
 
 
-login = password = app_id = client_secret = id_country = id_city = id_group = city_name = hours_delta = \
+login = password = app_id = client_secret = country_id = city_id = group_id = city_name = hours_delta = \
     days_delta = interesting_path = not_interesting_path = ''
 # взятие конфига из файла settings.ini
 if check_file('settings.ini'):
@@ -362,9 +362,9 @@ if check_file('settings.ini'):
     password = config['vk']['password']  # пароль от аккаунта VK
     app_id = config['vk']['app_id']  # id приложения
     client_secret = config['vk']['client_secret']  # секретный ключ приложения
-    id_country = config['vk']['id_country']  # id страны в которой будем искать события
-    id_city = config['vk']['id_city']  # id города для которого будем искать события
-    id_group = config['vk']['id_group']  # id группы в которую будем постить
+    country_id = config['vk']['country_id']  # id страны в которой будем искать события
+    city_id = config['vk']['city_id']  # id города для которого будем искать события
+    group_id = config['vk']['group_id']  # id группы в которую будем постить
     # дальше идут необязательные параметры
     city_name = config['settings']['city_name']  # имя города для которого будем искать события
     hours_delta = config['settings']['hours_delta']  # разница в часах от московского времени
@@ -375,7 +375,7 @@ else:
     error("Не найден файл конфигурации 'settings.ini'")
 
 try:
-    main(login, password, app_id, client_secret, id_country, id_city, id_group, city_name, int(hours_delta),
+    main(login, password, app_id, client_secret, country_id, city_id, group_id, city_name, int(hours_delta),
          int(days_delta), interesting_path, not_interesting_path)
 except Exception:
     log.log(traceback.format_exc())
