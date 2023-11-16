@@ -17,9 +17,9 @@ python3 -m pip install vk_api
 ```
 [vk]
 login = python@vk.com
-password = vk_passvord
-app_id = app_id 
-client_secret = client_secret
+password = 'vk_passvord'
+app_id = 'app_id' 
+client_secret = 'client_secret'
 country_id = 1
 city_id = 1
 group_id = 1
